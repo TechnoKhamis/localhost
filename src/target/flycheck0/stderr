@@ -1,0 +1,116 @@
+   0.021831600s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint: fingerprint error for localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("localhost", ["lib"], "C:\\Users\\salma\\OneDrive\\Desktop\\Codes\\Rust\\localhost\\src\\lib.rs", Edition2024) }
+   0.021923000s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost\target\debug\.fingerprint\localhost-01103a6df7e5573d\lib-localhost`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_path
+   6: git_filter_source_path
+   7: git_filter_source_path
+   8: git_filter_source_path
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.035972500s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint: fingerprint error for localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("localhost", ["lib"], "C:\\Users\\salma\\OneDrive\\Desktop\\Codes\\Rust\\localhost\\src\\lib.rs", Edition2024) }
+   0.036003900s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost\target\debug\.fingerprint\localhost-47e363167b077d48\test-lib-localhost`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_path
+   6: git_filter_source_path
+   7: git_filter_source_path
+   8: git_filter_source_path
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.036701100s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint: fingerprint error for localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost)/Check { test: false }/TargetInner { name: "localhost", doc: true, ..: with_path("C:\\Users\\salma\\OneDrive\\Desktop\\Codes\\Rust\\localhost\\src\\main.rs", Edition2024) }
+   0.036726400s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost\target\debug\.fingerprint\localhost-20a279577e56eede\bin-localhost`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_path
+   6: git_filter_source_path
+   7: git_filter_source_path
+   8: git_filter_source_path
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.037297400s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint: fingerprint error for localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost)/Check { test: true }/TargetInner { name: "localhost", doc: true, ..: with_path("C:\\Users\\salma\\OneDrive\\Desktop\\Codes\\Rust\\localhost\\src\\main.rs", Edition2024) }
+   0.037316500s  INFO prepare_target{force=false package_id=localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost) target="localhost"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost\target\debug\.fingerprint\localhost-6cf457fabe980676\test-bin-localhost`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_path
+   6: git_filter_source_path
+   7: git_filter_source_path
+   8: git_filter_source_path
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+    Checking localhost v0.1.0 (C:\Users\salma\OneDrive\Desktop\Codes\Rust\localhost)
+error: could not compile `localhost` (lib) due to 15 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `localhost` (lib test) due to 15 previous errors
