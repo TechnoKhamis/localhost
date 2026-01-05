@@ -62,6 +62,12 @@ impl HttpResponse {
         
         output
     }
+
+     pub fn payload_too_large() -> Self {
+        let mut response = HttpResponse::new(413,"Content Too Large");
+        response.set_body("<h1>413 - File too large</h1>");
+        response
+    }
     
     // Quick constructors for common responses
     
@@ -84,4 +90,23 @@ impl HttpResponse {
     pub fn method_not_allowed() -> Self {
         Self::new(405, "Method Not Allowed") 
     }
+    pub fn Forbidden() -> Self {
+        Self::new(403, "Forbidden") 
+    }
+
+
+    pub fn ok_with_message(msg: &str) -> Self {
+        let mut response = HttpResponse::ok();
+        response.set_body(msg);
+        response
+    }
+    
+    pub fn forbidden() -> Self {
+        let mut response = HttpResponse::Forbidden();
+        response.status_code = 403;
+        response.status_text = "Forbidden".to_string();
+        response.set_body("<h1>403 - Forbidden</h1>");
+        response
+    }
+    
 }

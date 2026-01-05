@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-/// Parsed HTTP request
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
     pub method: String,
@@ -11,7 +10,6 @@ pub struct HttpRequest {
     pub body: Vec<u8>,
 }
 
-/// Request line components (e.g., "GET /path?q=1 HTTP/1.1")
 struct RequestLine {
     method: String,
     path: String,
@@ -20,12 +18,12 @@ struct RequestLine {
 }
 
 impl HttpRequest {
-    /// Parse HTTP request from raw bytes
+    /// Parse HTTP request from buffer
+    /// Returns None if not enough data yet (keep reading!)
     pub fn parse(buffer: &[u8]) -> Option<Self> {
         // Find headers boundary
         let headers_end = find_double_crlf(buffer)?;
         let header_section = &buffer[..headers_end];
-        let body = buffer[headers_end + 4..].to_vec();
         
         // Parse header section
         let header_text = std::str::from_utf8(header_section).ok()?;
@@ -35,30 +33,75 @@ impl HttpRequest {
         let request_line_info = parse_request_line(first_line)?;
         let headers = parse_headers(lines);
         
+        let body_start = headers_end + 4;
+        
+        // Check if we need to wait for body
+        if let Some(len_str) = headers.get("Content-Length") {
+            let expected_size: usize = len_str.parse().ok()?;
+            let available = buffer.len().saturating_sub(body_start);
+            
+            println!("Content-Length: {}, Available: {}", expected_size, available);
+            
+            // Not enough data yet
+            if available < expected_size {
+                println!("Waiting for more body data...");
+                return None;
+            }
+            
+            // Extract body
+            let body = buffer[body_start..body_start + expected_size].to_vec();
+            println!("Full body received! {} bytes", body.len());
+            
+            return Some(HttpRequest {
+                method: request_line_info.method,
+                path: request_line_info.path,
+                query: request_line_info.query,
+                version: request_line_info.version,
+                headers,
+                body,
+            });
+        }
+        
+        // Check for chunked
+        if let Some(te) = headers.get("Transfer-Encoding") {
+            if te.to_lowercase().contains("chunked") {
+                println!("Chunked encoding - parsing...");
+                // Try to parse chunked data from buffer
+                let body = parse_chunked_from_buffer(&buffer[body_start..])?;
+                
+                return Some(HttpRequest {
+                    method: request_line_info.method,
+                    path: request_line_info.path,
+                    query: request_line_info.query,
+                    version: request_line_info.version,
+                    headers,
+                    body,
+                });
+            }
+        }
+        
+        // No body
         Some(HttpRequest {
             method: request_line_info.method,
             path: request_line_info.path,
             query: request_line_info.query,
             version: request_line_info.version,
             headers,
-            body,
+            body: Vec::new(),
         })
     }
 }
 
-/// Find "\r\n\r\n" position
 fn find_double_crlf(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-/// Parse "GET /path?q=1 HTTP/1.1"
 fn parse_request_line(line: &str) -> Option<RequestLine> {
     let mut parts = line.split_whitespace();
     let method = parts.next()?.to_string();
     let target = parts.next()?;
     let version = parts.next()?.to_string();
     
-    // Split path and query string
     let (path, query) = if let Some((p, q)) = target.split_once('?') {
         (p.to_string(), q.to_string())
     } else {
@@ -68,7 +111,6 @@ fn parse_request_line(line: &str) -> Option<RequestLine> {
     Some(RequestLine { method, path, query, version })
 }
 
-/// Parse "Key: Value" lines
 fn parse_headers<'a>(lines: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     for line in lines {
@@ -77,4 +119,10 @@ fn parse_headers<'a>(lines: impl Iterator<Item = &'a str>) -> HashMap<String, St
         }
     }
     headers
+}
+
+fn parse_chunked_from_buffer(data: &[u8]) -> Option<Vec<u8>> {
+    // TODO: Implement chunked parsing from buffer
+    // For now, return None to keep reading
+    None
 }

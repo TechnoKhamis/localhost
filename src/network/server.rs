@@ -142,7 +142,7 @@ impl Server {
     /// Handle HTTP request and build response
 fn handle_request(&self, request: &HttpRequest) -> HttpResponse {
 
-   let response = route_request(&request, &self.config.routes, &self.config.error_path);
+   let response = route_request(&request, &self.config);
 
     response
 }

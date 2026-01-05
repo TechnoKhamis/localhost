@@ -1,4 +1,5 @@
 use crate::config::RouteConfig;
+use crate::config::ServerConfig;
 use crate::http::{HttpRequest, HttpResponse};
 
 /// Find matching route for the request
@@ -8,23 +9,26 @@ pub fn find_route<'a>(
 ) -> Option<&'a RouteConfig> {
     routes
         .iter()
-        .find(|route| route.path == request.path)
+        .filter(|route| request.path.starts_with(&route.path))
+        .max_by_key(|route| route.path.len())
 }
 
 /// Route the request and return appropriate response
 pub fn route_request(
     request: &HttpRequest,
-    routes: &[RouteConfig],
-    error_path: &str  // ⭐ Changed from &String
+    configs: &ServerConfig,
 ) -> HttpResponse {
-    let matched_route = find_route(request, routes);
+    let matched_route = find_route(request, &configs.routes);
     
     match matched_route {
         Some(route) => {
+            
+            println!("{}", route.path);
+
             // Check if method is allowed
             if !route.methods.contains(&request.method) {                
                 // Try to serve custom 405 page
-                let error_file = format!("{}/405.html", error_path);
+            let error_file = format!("{}/405.html", configs.error_path);
                 match crate::handlers::serve_file(&error_file) {
                     Ok(content) => {
                         let mut response = HttpResponse::method_not_allowed();
@@ -39,15 +43,44 @@ pub fn route_request(
                         return response;
                     }
                 }
+
+
+            }
+
+            //Handle upload
+           if route.path.contains("/upload"){
+               
+               if request.method.eq_ignore_ascii_case("POST"){
+                return crate::handlers::upload_file(request,configs.client_body_size_limit);
+               } else if request.method.eq_ignore_ascii_case("DELETE"){
+                    return crate::handlers::delete_file(request);
+               }
             }
             
             
-            // Build file path
-            let file_path = if let Some(df) = &route.default_file {
+          let file_path = if route.path == "/" {
+            // For root route, build path from full request path
+            let req_path = request.path.trim_start_matches('/');
+            if req_path.is_empty() {
+                // Request is exactly "/"
+                if let Some(df) = &route.default_file {
+                    format!("{}/{}", route.root, df)
+                } else {
+                    route.root.clone()
+                }
+            } else {
+                // Request is like "/something.html"
+                format!("{}/{}", route.root, req_path)
+            }
+        } else {
+            // For other routes
+            if let Some(df) = &route.default_file {
                 format!("{}/{}", route.root, df)
             } else {
                 route.root.clone()
-            };
+            }
+        };
+
             
             println!("📂 Serving: {}", file_path);
             
@@ -68,7 +101,7 @@ pub fn route_request(
         }
         None => {            
             // Try to serve custom 404 page
-            let error_file = format!("{}/404.html", error_path);
+            let error_file = format!("{}/404.html", configs.error_path);
             match crate::handlers::serve_file(&error_file) {
                 Ok(content) => {
                     let mut response = HttpResponse::not_found();
