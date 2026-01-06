@@ -5,6 +5,14 @@ pub struct ServerConfig {
     pub client_body_size_limit: usize,
     pub routes: Vec<RouteConfig>,  //List of routes
     pub error_path:String,
+    pub vhosts: Vec<VHost>,
+}
+
+#[derive(Debug)]
+pub struct VHost {
+    pub name: String,
+    pub error_path: String,
+    pub routes: Vec<RouteConfig>,
 }
 
 /// Configuration for ONE route
@@ -21,4 +29,6 @@ pub struct RouteConfig {
 
     //default file to serve
     pub default_file:Option<String>,
+
+     pub autoindex: bool
 }

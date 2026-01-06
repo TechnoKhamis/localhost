@@ -122,7 +122,32 @@ fn parse_headers<'a>(lines: impl Iterator<Item = &'a str>) -> HashMap<String, St
 }
 
 fn parse_chunked_from_buffer(data: &[u8]) -> Option<Vec<u8>> {
-    // TODO: Implement chunked parsing from buffer
-    // For now, return None to keep reading
-    None
+    let mut body = Vec::new();
+    let mut pos = 0;
+    
+    loop {
+        // Find chunk size line end
+        let line_end = data[pos..].windows(2).position(|w| w == b"\r\n")?;
+        
+        // Parse hex size
+        let size_str = std::str::from_utf8(&data[pos..pos + line_end]).ok()?;
+        let size = usize::from_str_radix(size_str.trim(), 16).ok()?;
+        
+        pos += line_end + 2; // Skip size + \r\n
+        
+        if size == 0 {
+            break; // Last chunk
+        }
+        
+        // Check data available
+        if pos + size + 2 > data.len() {
+            return None; // Need more data
+        }
+        
+        // Extract chunk
+        body.extend_from_slice(&data[pos..pos + size]);
+        pos += size + 2; // Skip data + \r\n
+    }
+    
+    Some(body)
 }

@@ -9,10 +9,16 @@ pub fn create_session_id() -> String {
 }
 
 pub fn get_session_id(cookie_header: Option<&str>) -> Option<String> {
-    cookie_header?
-        .split(';')
-        .find(|c| c.trim().starts_with("SID="))?
-        .split('=')
-        .nth(1)
-        .map(|s| s.trim().to_string())
+    let header = cookie_header?;
+    
+    for part in header.split(';') {
+        let part = part.trim();
+        if part.starts_with("SID") { 
+            if let Some(value) = part.split('=').nth(1) {
+                return Some(value.trim().to_string());
+            }
+        }
+    }
+    
+    None
 }

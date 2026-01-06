@@ -142,8 +142,12 @@ impl Server {
     /// Handle HTTP request and build response
 fn handle_request(&self, request: &HttpRequest) -> HttpResponse {
 
-   let response = route_request(&request, &self.config);
-
+   let mut response = route_request(&request, &self.config);
+    let cookie = request.headers.get("Cookie").map(|s| s.as_str());
+    if crate::handlers::get_session_id(cookie).is_none() {
+        let sid = crate::handlers::create_session_id();
+        response.set_header("Set-Cookie", &format!("SID={}; Path=/; HttpOnly", sid));
+    }
     response
 }
 
