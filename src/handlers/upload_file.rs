@@ -4,20 +4,7 @@ use std::io::Write;
 
 pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
     if request.body.len() > max_size {
-        let error_file = "www/errors/413.html";
-        return match crate::handlers::serve_file(error_file) {
-            Ok(content) => {
-                let mut resp = HttpResponse::new(413, "Payload Too Large");
-                resp.set_header("Content-Type", "text/html");
-                resp.set_body_bytes(content);
-                resp
-            }
-            Err(_) => {
-                let mut resp = HttpResponse::new(413, "Payload Too Large");
-                resp.set_body("<h1>413 - Payload Too Large</h1>");
-                resp
-            }
-        };
+        return HttpResponse::payload_too_large();
     }
     
     let ct = request.headers
@@ -32,7 +19,7 @@ pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
     let filename = request.headers
         .get("X-Filename")
         .map(|v| v.to_string())
-        .unwrap_or_else(|| format!("upload-{}.bin", now_epoch_ms()));
+        .unwrap_or_else(|| format!("upload-{}.bin", timestamp_ms()));
     
     save_file("uploads", &filename, &request.body)
 }
@@ -45,7 +32,7 @@ fn handle_multipart(ct: &str, body: &[u8], max_size: usize) -> HttpResponse {
     
     let delim = format!("--{}", boundary).into_bytes();
     
-    // Find "\r\n\r\n" (headers end)
+    // Find header end
     let mut pos = 0;
     for i in 0..body.len().saturating_sub(3) {
         if &body[i..i+4] == b"\r\n\r\n" {
@@ -54,7 +41,7 @@ fn handle_multipart(ct: &str, body: &[u8], max_size: usize) -> HttpResponse {
         }
     }
     
-    // Extract filename from headers
+    // Extract filename
     let headers = String::from_utf8_lossy(&body[0..pos]);
     let filename = headers
         .split("filename=\"")
@@ -86,21 +73,14 @@ fn extract_boundary(ct: &str) -> Option<String> {
 }
 
 fn save_file(dir: &str, filename: &str, data: &[u8]) -> HttpResponse {
-    // Remove the ../
-    fs::create_dir_all(dir).ok();  // Just "uploads"
+    let _ = fs::create_dir_all(dir);
     
     let safe = sanitize_filename(filename);
-    let path = format!("{}/{}", dir, safe);  // Just "uploads/file.txt"
+    let path = format!("{}/{}", dir, safe);
     
     match File::create(&path).and_then(|mut f| f.write_all(data)) {
-        Ok(_) => {
-            println!("✅ Saved: {} ({} bytes)", path, data.len());
-            HttpResponse::ok()
-        }
-        Err(e) => {
-            println!("❌ Error: {}", e);
-            HttpResponse::internal_error()
-        }
+        Ok(_) => HttpResponse::ok(),
+        Err(_) => HttpResponse::internal_error(),
     }
 }
 
@@ -110,7 +90,7 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
-fn now_epoch_ms() -> u128 {
+fn timestamp_ms() -> u128 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

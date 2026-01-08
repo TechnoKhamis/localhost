@@ -1,5 +1,5 @@
-use crate::http::{ HttpResponse};
-// In handlers/mod.rs or handlers/directory.rs
+use crate::http::HttpResponse;
+
 pub fn list_directory(path: &str, uri: &str, _route: &str) -> HttpResponse {
     let entries = match std::fs::read_dir(path) {
         Ok(e) => e,
@@ -11,7 +11,6 @@ pub fn list_directory(path: &str, uri: &str, _route: &str) -> HttpResponse {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         
-        // Fix: Use uri, not route
         let link = if uri == "/" {
             format!("/{}", name)
         } else {

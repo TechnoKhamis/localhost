@@ -9,7 +9,6 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
-    /// Create new response
     pub fn new(status_code: u16, status_text: &str) -> Self {
         Self {
             status_code,
@@ -19,12 +18,10 @@ impl HttpResponse {
         }
     }
     
-    /// Set header
     pub fn set_header(&mut self, key: &str, value: &str) {
         self.headers.insert(key.to_string(), value.to_string());
     }
     
-    /// Set body from text
     pub fn set_body(&mut self, text: &str) {
         self.body = text.as_bytes().to_vec();
     }
@@ -32,29 +29,29 @@ impl HttpResponse {
     pub fn set_body_bytes(&mut self, bytes: Vec<u8>) {
         self.body = bytes;
     }
-
     
-    /// Convert to HTTP bytes for sending over network
+    /// Convert to wire format
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut output = Vec::new();
         
-        // Status line: "HTTP/1.1 200 OK\r\n"
-        let status_line = format!("HTTP/1.1 {} {}\r\n", self.status_code, self.status_text);
-        output.extend_from_slice(status_line.as_bytes());
+        // Status line
+        output.extend_from_slice(
+            format!("HTTP/1.1 {} {}\r\n", self.status_code, self.status_text).as_bytes()
+        );
         
         // Headers
         for (key, value) in &self.headers {
-            let header = format!("{}: {}\r\n", key, value);
-            output.extend_from_slice(header.as_bytes());
+            output.extend_from_slice(format!("{}: {}\r\n", key, value).as_bytes());
         }
         
-        // Content-Length header (auto-add if not present)
+        // Content-Length
         if !self.headers.contains_key("Content-Length") {
-            let content_length = format!("Content-Length: {}\r\n", self.body.len());
-            output.extend_from_slice(content_length.as_bytes());
+            output.extend_from_slice(
+                format!("Content-Length: {}\r\n", self.body.len()).as_bytes()
+            );
         }
         
-        // Empty line
+        // End of headers
         output.extend_from_slice(b"\r\n");
         
         // Body
@@ -62,14 +59,8 @@ impl HttpResponse {
         
         output
     }
-
-     pub fn payload_too_large() -> Self {
-        let mut response = HttpResponse::new(413,"Content Too Large");
-        response.set_body("<h1>413 - File too large</h1>");
-        response
-    }
     
-    // Quick constructors for common responses
+    // Quick constructors
     
     pub fn ok() -> Self {
         Self::new(200, "OK")
@@ -79,34 +70,29 @@ impl HttpResponse {
         Self::new(404, "Not Found")
     }
     
+    pub fn bad_request() -> Self {
+        Self::new(400, "Bad Request")
+    }
+    
+    pub fn method_not_allowed() -> Self {
+        Self::new(405, "Method Not Allowed")
+    }
+    
+    pub fn forbidden() -> Self {
+        Self::new(403, "Forbidden")
+    }
+    
     pub fn internal_error() -> Self {
         Self::new(500, "Internal Server Error")
     }
     
-    pub fn bad_request() -> Self {
-        Self::new(400, "Bad Request")
+    pub fn payload_too_large() -> Self {
+        Self::new(413, "Payload Too Large")
     }
-
-    pub fn method_not_allowed() -> Self {
-        Self::new(405, "Method Not Allowed") 
-    }
-    pub fn Forbidden() -> Self {
-        Self::new(403, "Forbidden") 
-    }
-
-
+    
     pub fn ok_with_message(msg: &str) -> Self {
-        let mut response = HttpResponse::ok();
+        let mut response = Self::ok();
         response.set_body(msg);
         response
     }
-    
-    pub fn forbidden() -> Self {
-        let mut response = HttpResponse::Forbidden();
-        response.status_code = 403;
-        response.status_text = "Forbidden".to_string();
-        response.set_body("<h1>403 - Forbidden</h1>");
-        response
-    }
-    
 }

@@ -7,21 +7,12 @@ pub fn delete_file(request: &HttpRequest) -> HttpResponse {
     let full_path = build_safe_path("uploads", &file_path);
     
     if !is_safe_path(&full_path) {
-        println!("⚠️  Blocked unsafe path: {:?}", full_path);
         return HttpResponse::forbidden();
     }
     
-    println!("🗑️  Attempting to delete: {:?}", full_path);
-    
     match fs::remove_file(&full_path) {
-        Ok(_) => {
-            println!("✅ Deleted: {:?}", full_path);
-            HttpResponse::ok_with_message("File deleted successfully")
-        }
-        Err(e) => {
-            println!("❌ Delete failed: {}", e);
-            HttpResponse::not_found()
-        }
+        Ok(_) => HttpResponse::ok_with_message("File deleted"),
+        Err(_) => HttpResponse::not_found(),
     }
 }
 
@@ -37,7 +28,7 @@ fn extract_file_path(uri: &str) -> String {
 }
 
 fn build_safe_path(base_dir: &str, relative: &str) -> PathBuf {
-    let mut result = PathBuf::from(base_dir);  // Just "uploads", no ../
+    let mut result = PathBuf::from(base_dir);
     
     for component in Path::new(relative).components() {
         match component {

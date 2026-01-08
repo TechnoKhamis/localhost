@@ -13,70 +13,49 @@ pub fn find_route<'a>(
 
 pub fn route_request(
     request: &HttpRequest,
-    configs: &ServerConfig,
+    config: &ServerConfig,
 ) -> HttpResponse {
-    let (routes, error_path) = if !configs.vhosts.is_empty() {
-        if let Some(vhost) = find_vhost(request, &configs.vhosts) {
+    let (routes, error_path) = if !config.vhosts.is_empty() {
+        if let Some(vhost) = find_vhost(request, &config.vhosts) {
             (&vhost.routes, &vhost.error_path)
         } else {
-            (&configs.routes, &configs.error_path)
+            (&config.routes, &config.error_path)
         }
     } else {
-        (&configs.routes, &configs.error_path)
+        (&config.routes, &config.error_path)
     };
     
-    let matched_route = find_route(request, routes);
-    match matched_route {
+    let matched = find_route(request, routes);
+    
+    match matched {
         Some(route) => {
-            if !route.methods.contains(&request.method) {                
-                let error_file = format!("{}/405.html", error_path);
-                match crate::handlers::serve_file(&error_file) {
-                    Ok(content) => {
-                        let mut response = HttpResponse::method_not_allowed();
-                        response.set_header("Content-Type", "text/html");
-                        response.set_body_bytes(content);
-                        return response;
-                    }
-                    Err(_) => {
-                        let mut response = HttpResponse::method_not_allowed();
-                        response.set_body("<h1>405 - Method Not Allowed</h1>");
-                        return response;
-                    }
-                }
+            // Check method
+            if !route.methods.iter().any(|m| m.eq_ignore_ascii_case(&request.method)) {
+                return error_response(405, error_path, "Method Not Allowed");
             }
+            
+            // Check HTTP version
+            if request.version != "HTTP/1.1" {
+                return error_response(400, error_path, "Bad Request");
+            }
+            
+            // Handle redirect
             if let Some(target) = &route.redirect {
                 let mut resp = HttpResponse::new(302, "Found");
                 resp.set_header("Location", target);
                 return resp;
             }
-
-
-            let error_file = format!("{}/400.html", error_path);
-             if request.version != "HTTP/1.1" {
-                 match crate::handlers::serve_file(&error_file) {
-                    Ok(content) => {
-                        let mut response = HttpResponse::bad_request();
-                        response.set_header("Content-Type", "text/html");
-                        response.set_body_bytes(content);
-                        return response;
-                    }
-                    Err(_) => {
-                        let mut response = HttpResponse::bad_request();
-                    response.set_body("<h1>400 - HTTP/1.1 Required</h1>");
-                        return response;
-                    }
-                }
-            }
-
-            if route.path.contains("/upload"){
-                if request.method.eq_ignore_ascii_case("POST"){
-                    return crate::handlers::upload_file(request, configs.client_body_size_limit);
-                } else if request.method.eq_ignore_ascii_case("DELETE"){
+            
+            // Handle upload
+            if route.path.contains("/upload") {
+                if request.method.eq_ignore_ascii_case("POST") {
+                    return crate::handlers::upload_file(request, config.client_body_size_limit);
+                } else if request.method.eq_ignore_ascii_case("DELETE") {
                     return crate::handlers::delete_file(request);
                 }
             }
             
-            // CGI check (before file path resolution)
+            // Handle CGI
             if let Some(_cgi) = &route.cgi {
                 let script_name = request.path
                     .strip_prefix(&route.path)
@@ -87,6 +66,7 @@ pub fn route_request(
                 return crate::handlers::run_cgi(&script_path, &request.path, request);
             }
             
+            // Build file path
             let file_path = if route.path == "/" {
                 let req_path = request.path.trim_start_matches('/');
                 if req_path.is_empty() {
@@ -109,10 +89,10 @@ pub fn route_request(
                     format!("{}/{}", route.root, after)
                 }
             };
-
+            
             let path_obj = std::path::Path::new(&file_path);
-
-            // Check if file exists and serve it
+            
+            // Serve file
             if path_obj.is_file() {
                 match crate::handlers::serve_file(&file_path) {
                     Ok(content) => {
@@ -122,25 +102,13 @@ pub fn route_request(
                         return response;
                     }
                     Err(_) => {
-                        // File error - return 404
-                        let error_file = format!("{}/404.html", error_path);
-                        return match crate::handlers::serve_file(&error_file) {
-                            Ok(content) => {
-                                let mut response = HttpResponse::not_found();
-                                response.set_header("Content-Type", "text/html");
-                                response.set_body_bytes(content);
-                                response
-                            }
-                            Err(_) => {
-                                let mut response = HttpResponse::not_found();
-                                response.set_body("<h1>404 - File Not Found</h1>");
-                                response
-                            }
-                        };
+                        return error_response(404, error_path, "Not Found");
                     }
                 }
-            } else if path_obj.is_dir() {
-                // Try default file first
+            }
+            
+            // Handle directory
+            if path_obj.is_dir() {
                 if let Some(df) = &route.default_file {
                     let default_path = format!("{}/{}", file_path, df);
                     if let Ok(content) = crate::handlers::serve_file(&default_path) {
@@ -151,60 +119,16 @@ pub fn route_request(
                     }
                 }
                 
-                // Try autoindex
                 if route.autoindex {
                     return crate::handlers::list_directory(&file_path, &request.path, &route.root);
                 }
                 
-                // Directory without default file or autoindex - 403
-                let error_file = format!("{}/403.html", error_path);
-                return match crate::handlers::serve_file(&error_file) {
-                    Ok(content) => {
-                        let mut response = HttpResponse::new(403, "Forbidden");
-                        response.set_header("Content-Type", "text/html");
-                        response.set_body_bytes(content);
-                        response
-                    }
-                    Err(_) => {
-                        let mut response = HttpResponse::new(403, "Forbidden");
-                        response.set_body("<h1>403 - Forbidden</h1>");
-                        response
-                    }
-                };
+                return error_response(403, error_path, "Forbidden");
             }
-
-            // Path doesn't exist at all - 404
-            let error_file = format!("{}/404.html", error_path);
-            match crate::handlers::serve_file(&error_file) {
-                Ok(content) => {
-                    let mut response = HttpResponse::not_found();
-                    response.set_header("Content-Type", "text/html");
-                    response.set_body_bytes(content);
-                    response
-                }
-                Err(_) => {
-                    let mut response = HttpResponse::not_found();
-                    response.set_body("<h1>404 - File Not Found</h1>");
-                    response
-                }
-            }
+            
+            error_response(404, error_path, "Not Found")
         }
-        None => {            
-            let error_file = format!("{}/404.html", error_path);
-            match crate::handlers::serve_file(&error_file) {
-                Ok(content) => {
-                    let mut response = HttpResponse::not_found();
-                    response.set_header("Content-Type", "text/html");
-                    response.set_body_bytes(content);
-                    response
-                }
-                Err(_) => {
-                    let mut response = HttpResponse::not_found();
-                    response.set_body("<h1>404 - Route Not Found</h1>");
-                    response
-                }
-            }
-        }
+        None => error_response(404, error_path, "Not Found")
     }
 }
 
@@ -216,26 +140,32 @@ fn find_vhost<'a>(request: &HttpRequest, vhosts: &'a [VHost]) -> Option<&'a VHos
         .find(|v| Some(v.name.as_str()) == host)
 }
 
-fn get_content_type(file_path: &str) -> &str {
-    if file_path.ends_with(".html") {
-        "text/html"
-    } else if file_path.ends_with(".css") {
-        "text/css"
-    } else if file_path.ends_with(".js") {
-        "application/javascript"
-    } else if file_path.ends_with(".json") {
-        "application/json"
-    } else if file_path.ends_with(".png") {
-        "image/png"
-    } else if file_path.ends_with(".jpg") || file_path.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if file_path.ends_with(".gif") {
-        "image/gif"
-    } else if file_path.ends_with(".svg") {
-        "image/svg+xml"
-    } else if file_path.ends_with(".txt") {
-        "text/plain"
-    } else {
-        "application/octet-stream"
+fn error_response(code: u16, error_path: &str, message: &str) -> HttpResponse {
+    let error_file = format!("{}/{}.html", error_path, code);
+    
+    match crate::handlers::serve_file(&error_file) {
+        Ok(content) => {
+            let mut response = HttpResponse::new(code, message);
+            response.set_header("Content-Type", "text/html");
+            response.set_body_bytes(content);
+            response
+        }
+        Err(_) => {
+            let mut response = HttpResponse::new(code, message);
+            response.set_body(&format!("<h1>{} - {}</h1>", code, message));
+            response
+        }
     }
+}
+
+fn get_content_type(file_path: &str) -> &str {
+    if file_path.ends_with(".html") { "text/html" }
+    else if file_path.ends_with(".css") { "text/css" }
+    else if file_path.ends_with(".js") { "application/javascript" }
+    else if file_path.ends_with(".json") { "application/json" }
+    else if file_path.ends_with(".png") { "image/png" }
+    else if file_path.ends_with(".jpg") || file_path.ends_with(".jpeg") { "image/jpeg" }
+    else if file_path.ends_with(".gif") { "image/gif" }
+    else if file_path.ends_with(".txt") { "text/plain" }
+    else { "application/octet-stream" }
 }

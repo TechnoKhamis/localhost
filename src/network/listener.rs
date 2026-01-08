@@ -18,7 +18,7 @@ pub fn set_nonblocking(fd: RawFd) -> io::Result<()> {
     Ok(())
 }
 
-/// Create TCP listener and make it non-blocking
+/// Create non-blocking TCP listener
 pub fn create_listener(address: &str) -> io::Result<TcpListener> {
     let listener = TcpListener::bind(address)?;
     set_nonblocking(listener.as_raw_fd())?;

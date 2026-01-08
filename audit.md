@@ -144,7 +144,7 @@ printf 'chunked\n' | curl -X POST -H "Transfer-Encoding: chunked" --data-binary 
 
 ---
 
-## 9. Session Cookies ✅
+## 9. Session Cookies s
 
 ```bash
 curl -i http://127.0.0.1:8080/ | grep Set-Cookie
