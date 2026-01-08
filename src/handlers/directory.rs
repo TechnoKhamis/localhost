@@ -15,7 +15,7 @@ pub fn list_directory(path: &str, uri: &str, _route: &str) -> HttpResponse {
         let link = if uri == "/" {
             format!("/{}", name)
         } else {
-            format!("{}/{}", uri, name)
+            format!("{}{}", uri, name)
         };
         
         html.push_str(&format!(r#"<li><a href="{}">{}</a></li>"#, link, name));

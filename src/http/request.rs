@@ -52,6 +52,7 @@ impl HttpRequest {
             let body = buffer[body_start..body_start + expected_size].to_vec();
             println!("Full body received! {} bytes", body.len());
             
+            
             return Some(HttpRequest {
                 method: request_line_info.method,
                 path: request_line_info.path,

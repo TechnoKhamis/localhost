@@ -1,7 +1,7 @@
 /// This holds the server configuration
 #[derive(Debug)]
 pub struct ServerConfig {
-    pub listen_address: String,
+    pub listen_addresses: Vec<String>,
     pub client_body_size_limit: usize,
     pub routes: Vec<RouteConfig>,  //List of routes
     pub error_path:String,
@@ -30,5 +30,9 @@ pub struct RouteConfig {
     //default file to serve
     pub default_file:Option<String>,
 
-     pub autoindex: bool
+     pub autoindex: bool,
+
+    pub cgi: Option<String>,
+
+     pub redirect: Option<String>,
 }

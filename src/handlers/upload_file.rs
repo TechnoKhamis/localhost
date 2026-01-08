@@ -4,7 +4,20 @@ use std::io::Write;
 
 pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
     if request.body.len() > max_size {
-        return HttpResponse::payload_too_large();
+        let error_file = "www/errors/413.html";
+        return match crate::handlers::serve_file(error_file) {
+            Ok(content) => {
+                let mut resp = HttpResponse::new(413, "Payload Too Large");
+                resp.set_header("Content-Type", "text/html");
+                resp.set_body_bytes(content);
+                resp
+            }
+            Err(_) => {
+                let mut resp = HttpResponse::new(413, "Payload Too Large");
+                resp.set_body("<h1>413 - Payload Too Large</h1>");
+                resp
+            }
+        };
     }
     
     let ct = request.headers
