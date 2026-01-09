@@ -15,9 +15,14 @@ pub fn route_request(
     request: &HttpRequest,
     config: &ServerConfig,
 ) -> HttpResponse {
-    // Check HTTP version
+    // Check HTTP version FIRST
     if request.version != "HTTP/1.1" {
         return error_response(400, &config.error_path, "Bad Request");
+    }
+
+    // Check body size limit EARLY (before any processing)
+    if request.body.len() > config.client_body_size_limit {
+        return error_response(413, &config.error_path, "Payload Too Large");
     }
 
     let (routes, error_path) = if !config.vhosts.is_empty() {
@@ -49,7 +54,11 @@ pub fn route_request(
             // Handle upload
             if route.path.contains("/upload") {
                 if request.method.eq_ignore_ascii_case("POST") {
-                    return crate::handlers::upload_file(request, config.client_body_size_limit);
+                    // Double check size limit for uploads and return proper error page
+                    if request.body.len() > config.client_body_size_limit {
+                        return error_response(413, error_path, "Payload Too Large");
+                    }
+                    return crate::handlers::upload_file(request, config.client_body_size_limit, error_path);
                 } else if request.method.eq_ignore_ascii_case("DELETE") {
                     return crate::handlers::delete_file(request);
                 }
@@ -57,12 +66,34 @@ pub fn route_request(
             
             // Handle CGI
             if let Some(_cgi) = &route.cgi {
-                let script_name = request.path
+                // Extract script name from URL path
+                // e.g., /cgi/test.py -> test.py
+                let after_route = request.path
                     .strip_prefix(&route.path)
-                    .unwrap_or("")
+                    .unwrap_or(&request.path)
                     .trim_start_matches('/');
                 
-                let script_path = format!("{}/{}", route.root, script_name);
+                // DEBUG: Print what we're computing
+                eprintln!("[CGI DEBUG] request.path = '{}'", request.path);
+                eprintln!("[CGI DEBUG] route.path = '{}'", route.path);
+                eprintln!("[CGI DEBUG] route.root = '{}'", route.root);
+                eprintln!("[CGI DEBUG] after_route = '{}'", after_route);
+                
+                // Handle empty script name
+                if after_route.is_empty() {
+                    return error_response(404, error_path, "Not Found");
+                }
+                
+                // Build script path
+                // If after_route already starts with route.root, don't duplicate it
+                let script_path = if after_route.starts_with(&route.root) {
+                    after_route.to_string()
+                } else {
+                    format!("{}/{}", route.root, after_route)
+                };
+                
+                eprintln!("[CGI DEBUG] script_path = '{}'", script_path);
+                
                 let path_info = request.path.clone();
                 return crate::handlers::run_cgi(&script_path, &path_info, request);
             }

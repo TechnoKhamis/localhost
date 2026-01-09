@@ -59,20 +59,32 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
 
     // Set working directory to script's directory
     let working_dir = script.parent().map(|p| p.to_path_buf());
+    
+    // Get just the script filename for when we change working directory
+    let script_filename = script.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(script_path);
 
     // Spawn CGI process
     let mut cmd = Command::new(&interpreter);
-    cmd.arg(script_path)
-        .envs(&env)
+    
+    // If we're setting a working directory, use just the filename
+    // Otherwise use the full path
+    if let Some(ref dir) = working_dir {
+        if dir.exists() && !dir.as_os_str().is_empty() {
+            cmd.arg(script_filename);
+            cmd.current_dir(dir);
+        } else {
+            cmd.arg(script_path);
+        }
+    } else {
+        cmd.arg(script_path);
+    }
+    
+    cmd.envs(&env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    
-    if let Some(dir) = &working_dir {
-        if dir.exists() {
-            cmd.current_dir(dir);
-        }
-    }
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,

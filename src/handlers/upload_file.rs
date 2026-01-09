@@ -2,9 +2,9 @@ use crate::http::{HttpRequest, HttpResponse};
 use std::fs::{self, File};
 use std::io::Write;
 
-pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
+pub fn upload_file(request: &HttpRequest, max_size: usize, error_path: &str) -> HttpResponse {
     if request.body.len() > max_size {
-        return HttpResponse::payload_too_large();
+        return error_response(413, error_path, "Payload Too Large");
     }
     
     let ct = request.headers
@@ -13,7 +13,7 @@ pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
         .unwrap_or("");
     
     if ct.to_ascii_lowercase().starts_with("multipart/form-data") {
-        return handle_multipart(ct, &request.body, max_size);
+        return handle_multipart(ct, &request.body, max_size, error_path);
     }
     
     let filename = request.headers
@@ -21,13 +21,13 @@ pub fn upload_file(request: &HttpRequest, max_size: usize) -> HttpResponse {
         .map(|v| v.to_string())
         .unwrap_or_else(|| format!("upload-{}.bin", timestamp_ms()));
     
-    save_file("uploads", &filename, &request.body)
+    save_file("uploads", &filename, &request.body, error_path)
 }
 
-fn handle_multipart(ct: &str, body: &[u8], max_size: usize) -> HttpResponse {
+fn handle_multipart(ct: &str, body: &[u8], max_size: usize, error_path: &str) -> HttpResponse {
     let boundary = match extract_boundary(ct) {
         Some(b) => b,
-        None => return HttpResponse::bad_request(),
+        None => return error_response(400, error_path, "Bad Request"),
     };
     
     let delim = format!("--{}", boundary).into_bytes();
@@ -60,10 +60,10 @@ fn handle_multipart(ct: &str, body: &[u8], max_size: usize) -> HttpResponse {
     let file_data = &body[pos..data_end];
     
     if file_data.len() > max_size {
-        return HttpResponse::payload_too_large();
+        return error_response(413, error_path, "Payload Too Large");
     }
     
-    save_file("uploads", &filename, file_data)
+    save_file("uploads", &filename, file_data, error_path)
 }
 
 fn extract_boundary(ct: &str) -> Option<String> {
@@ -72,7 +72,7 @@ fn extract_boundary(ct: &str) -> Option<String> {
         .map(|p| p.split('=').nth(1).unwrap_or("").trim().trim_matches('"').to_string())
 }
 
-fn save_file(dir: &str, filename: &str, data: &[u8]) -> HttpResponse {
+fn save_file(dir: &str, filename: &str, data: &[u8], error_path: &str) -> HttpResponse {
     let _ = fs::create_dir_all(dir);
     
     let safe = sanitize_filename(filename);
@@ -80,7 +80,27 @@ fn save_file(dir: &str, filename: &str, data: &[u8]) -> HttpResponse {
     
     match File::create(&path).and_then(|mut f| f.write_all(data)) {
         Ok(_) => HttpResponse::ok_with_message(&format!("File '{}' uploaded successfully", safe)),
-        Err(_) => HttpResponse::internal_error(),
+        Err(_) => error_response(500, error_path, "Internal Server Error"),
+    }
+}
+
+fn error_response(code: u16, error_path: &str, message: &str) -> HttpResponse {
+    let error_file = format!("{}/{}.html", error_path, code);
+    
+    match crate::handlers::serve_file(&error_file) {
+        Ok(content) => {
+            let mut response = HttpResponse::new(code, message);
+            response.set_header("Content-Type", "text/html");
+            response.set_body_bytes(content);
+            response
+        }
+        Err(_) => {
+            // Fallback if error page not found
+            let mut response = HttpResponse::new(code, message);
+            response.set_header("Content-Type", "text/html");
+            response.set_body(&format!("<!DOCTYPE html><html><body><h1>{} - {}</h1></body></html>", code, message));
+            response
+        }
     }
 }
 
