@@ -11,7 +11,7 @@ pub fn delete_file(request: &HttpRequest) -> HttpResponse {
     }
     
     match fs::remove_file(&full_path) {
-        Ok(_) => HttpResponse::ok_with_message("File deleted"),
+        Ok(_) => HttpResponse::ok_with_message("Deleted"),
         Err(_) => HttpResponse::not_found(),
     }
 }

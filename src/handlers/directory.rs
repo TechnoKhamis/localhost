@@ -11,10 +11,10 @@ pub fn list_directory(path: &str, uri: &str, _route: &str) -> HttpResponse {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         
-        let link = if uri == "/" {
-            format!("/{}", name)
-        } else {
+        let link = if uri == "/" || uri.ends_with('/') {
             format!("{}{}", uri, name)
+        } else {
+            format!("{}/{}", uri, name)
         };
         
         html.push_str(&format!(r#"<li><a href="{}">{}</a></li>"#, link, name));

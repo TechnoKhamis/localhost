@@ -15,6 +15,11 @@ pub fn route_request(
     request: &HttpRequest,
     config: &ServerConfig,
 ) -> HttpResponse {
+    // Check HTTP version
+    if request.version != "HTTP/1.1" {
+        return error_response(400, &config.error_path, "Bad Request");
+    }
+
     let (routes, error_path) = if !config.vhosts.is_empty() {
         if let Some(vhost) = find_vhost(request, &config.vhosts) {
             (&vhost.routes, &vhost.error_path)
@@ -32,11 +37,6 @@ pub fn route_request(
             // Check method
             if !route.methods.iter().any(|m| m.eq_ignore_ascii_case(&request.method)) {
                 return error_response(405, error_path, "Method Not Allowed");
-            }
-            
-            // Check HTTP version
-            if request.version != "HTTP/1.1" {
-                return error_response(400, error_path, "Bad Request");
             }
             
             // Handle redirect
@@ -63,7 +63,8 @@ pub fn route_request(
                     .trim_start_matches('/');
                 
                 let script_path = format!("{}/{}", route.root, script_name);
-                return crate::handlers::run_cgi(&script_path, &request.path, request);
+                let path_info = request.path.clone();
+                return crate::handlers::run_cgi(&script_path, &path_info, request);
             }
             
             // Build file path

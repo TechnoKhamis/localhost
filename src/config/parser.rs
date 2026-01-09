@@ -87,14 +87,14 @@ pub fn parse_config_string(content: &str) -> io::Result<ServerConfig> {
                         }
                     }
                 }
-                else if line.starts_with("client_body_size_limit") {
+                else if line.starts_with("client_body_size_limit") || line.starts_with("client_max_body_size") {
                     if let Some(value) = line.split('=').nth(1) {
                         if let Ok(size) = value.trim().parse::<usize>() {
                             client_body_size_limit = size;
                         }
                     }
                 }
-                else if line.starts_with("error_path") {
+                else if line.starts_with("error_path") || line.starts_with("error_dir") {
                     if let Some(value) = line.split('=').nth(1) {
                         error_path = value.trim().to_string();
                         if let Some(vh) = &mut current_vhost {
@@ -151,7 +151,7 @@ pub fn parse_config_string(content: &str) -> io::Result<ServerConfig> {
                             .collect();
                     }
                 }
-                else if line.starts_with("default_file") {
+                else if line.starts_with("default_file") || line.starts_with("default") {
                     if let Some(value) = line.split('=').nth(1) {
                         current_default_file = value.trim().to_string();
                     }

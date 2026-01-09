@@ -30,6 +30,9 @@ pub struct ClientConnection {
     pub connected_at: Instant,
     pub last_activity: Instant,
     
+    // REQUEST TIMEOUT: Track when we started receiving this request
+    pub request_started_at: Option<Instant>,
+    
     // Keep-alive
     pub keep_alive: bool,
     pub requests_handled: u32,
@@ -46,6 +49,7 @@ impl ClientConnection {
             bytes_written: 0,
             connected_at: now,
             last_activity: now,
+            request_started_at: None,  // No request started yet
             keep_alive: true,
             requests_handled: 0,
         }
@@ -64,6 +68,12 @@ impl ClientConnection {
             Ok(n) => {
                 self.read_buffer.extend_from_slice(&temp[..n]);
                 self.last_activity = Instant::now();
+                
+                // START REQUEST TIMEOUT: Mark when we first receive data for this request
+                if self.request_started_at.is_none() {
+                    self.request_started_at = Some(Instant::now());
+                }
+                
                 Ok(n)
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -132,11 +142,24 @@ impl ClientConnection {
         self.bytes_written = 0;
         self.state = ConnState::Reading;
         self.requests_handled += 1;
+        // IMPORTANT: Reset request timeout for next request
+        self.request_started_at = None;
     }
     
-    /// Check if connection has been idle too long
-    pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
+    /// Check if connection has been idle too long (no activity at all)
+    pub fn is_idle_timeout(&self, timeout_secs: u64) -> bool {
         self.last_activity.elapsed().as_secs() > timeout_secs
+    }
+    
+    /// Check if current REQUEST is taking too long (incomplete request timeout)
+    pub fn is_request_timeout(&self, timeout_secs: u64) -> bool {
+        if let Some(started) = self.request_started_at {
+            // Only timeout if we're still reading (incomplete request)
+            if self.state == ConnState::Reading {
+                return started.elapsed().as_secs() > timeout_secs;
+            }
+        }
+        false
     }
     
     /// Check if write is complete

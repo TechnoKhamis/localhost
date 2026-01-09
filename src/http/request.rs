@@ -113,17 +113,22 @@ fn parse_chunked(data: &[u8]) -> Option<Vec<u8>> {
     let mut pos = 0;
     
     loop {
+        if pos >= data.len() {
+            return None; // Incomplete
+        }
+        
         // Find chunk size line end
-        let line_end = data[pos..].windows(2).position(|w| w == b"\r\n")?;
+        let remaining = &data[pos..];
+        let line_end = remaining.windows(2).position(|w| w == b"\r\n")?;
         
         // Parse hex size
-        let size_str = std::str::from_utf8(&data[pos..pos + line_end]).ok()?;
+        let size_str = std::str::from_utf8(&remaining[..line_end]).ok()?;
         let size = usize::from_str_radix(size_str.trim(), 16).ok()?;
         
         pos += line_end + 2;
         
         if size == 0 {
-            break;
+            break; // End of chunks
         }
         
         if pos + size + 2 > data.len() {
@@ -131,7 +136,7 @@ fn parse_chunked(data: &[u8]) -> Option<Vec<u8>> {
         }
         
         body.extend_from_slice(&data[pos..pos + size]);
-        pos += size + 2;
+        pos += size + 2; // Skip chunk data + CRLF
     }
     
     Some(body)

@@ -2,7 +2,6 @@
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::time::Duration;
 
 use crate::config::ServerConfig;
 use crate::http::{HttpRequest, HttpResponse};
@@ -11,8 +10,11 @@ use super::connection::{ClientConnection, ConnState, ConnectionError};
 use super::epoll_wrapper::{Epoll, Interest};
 use super::{create_listener, route_request};
 
-/// Maximum idle time before closing connection
+/// Maximum idle time before closing connection (no activity at all)
 const IDLE_TIMEOUT_SECS: u64 = 30;
+
+/// Maximum time for a request to complete (prevents slow loris attacks)
+const REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// How often to check for timeouts (milliseconds)
 const TIMEOUT_CHECK_MS: i32 = 1000;
@@ -150,7 +152,7 @@ impl Server {
                 }
             }
             
-            // Clean up closed/timed-out connections
+            // Clean up closed/timed-out connections (including REQUEST timeouts)
             self.cleanup_connections(&poller, &mut clients);
         }
     }
@@ -269,21 +271,29 @@ impl Server {
     }
     
     /// Clean up closed and timed-out connections
+    /// NOW INCLUDES REQUEST TIMEOUT CHECK!
     fn cleanup_connections(
         &self,
         poller: &Epoll,
         clients: &mut HashMap<RawFd, ClientConnection>,
     ) {
-        let fds_to_remove: Vec<RawFd> = clients
+        let fds_to_remove: Vec<(RawFd, &str)> = clients
             .iter()
-            .filter(|(_, conn)| {
-                conn.state == ConnState::Closing ||
-                conn.is_timed_out(IDLE_TIMEOUT_SECS)
+            .filter_map(|(fd, conn)| {
+                if conn.state == ConnState::Closing {
+                    Some((*fd, "closed"))
+                } else if conn.is_idle_timeout(IDLE_TIMEOUT_SECS) {
+                    Some((*fd, "idle timeout"))
+                } else if conn.is_request_timeout(REQUEST_TIMEOUT_SECS) {
+                    // NEW: Check for request timeout (slow/incomplete requests)
+                    Some((*fd, "request timeout"))
+                } else {
+                    None
+                }
             })
-            .map(|(fd, _)| *fd)
             .collect();
         
-        for fd in fds_to_remove {
+        for (fd, reason) in fds_to_remove {
             if let Some(conn) = clients.remove(&fd) {
                 // Unregister from epoll
                 let _ = poller.unregister(fd);
@@ -291,10 +301,8 @@ impl Server {
                 // Shutdown socket gracefully
                 let _ = conn.stream.shutdown(std::net::Shutdown::Both);
                 
-                if conn.is_timed_out(IDLE_TIMEOUT_SECS) {
-                    println!("[server] connection timed out");
-                } else {
-                   // println!("[server] connection closed");
+                if reason != "closed" {
+                    println!("[server] connection {}: {}", fd, reason);
                 }
             }
         }

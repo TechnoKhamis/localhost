@@ -69,7 +69,7 @@ fn handle_multipart(ct: &str, body: &[u8], max_size: usize) -> HttpResponse {
 fn extract_boundary(ct: &str) -> Option<String> {
     ct.split(';')
         .find(|p| p.trim().starts_with("boundary="))
-        .map(|p| p.split('=').nth(1).unwrap_or("").trim().to_string())
+        .map(|p| p.split('=').nth(1).unwrap_or("").trim().trim_matches('"').to_string())
 }
 
 fn save_file(dir: &str, filename: &str, data: &[u8]) -> HttpResponse {
@@ -79,7 +79,7 @@ fn save_file(dir: &str, filename: &str, data: &[u8]) -> HttpResponse {
     let path = format!("{}/{}", dir, safe);
     
     match File::create(&path).and_then(|mut f| f.write_all(data)) {
-        Ok(_) => HttpResponse::ok(),
+        Ok(_) => HttpResponse::ok_with_message(&format!("File '{}' uploaded successfully", safe)),
         Err(_) => HttpResponse::internal_error(),
     }
 }
