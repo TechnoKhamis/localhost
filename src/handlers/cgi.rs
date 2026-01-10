@@ -47,15 +47,20 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
     env.insert("GATEWAY_INTERFACE".to_string(), "CGI/1.1".to_string());
     env.insert("QUERY_STRING".to_string(), request.query.clone());
     
+    // Pass Content-Type if present
     if let Some(ct) = request.headers.get("Content-Type") {
         env.insert("CONTENT_TYPE".to_string(), ct.clone());
     }
     
-    // Pass HTTP headers as environment variables
+    // Pass HTTP headers as environment variables (CGI standard)
     for (k, v) in &request.headers {
         let env_key = format!("HTTP_{}", k.to_uppercase().replace("-", "_"));
         env.insert(env_key, v.clone());
     }
+    
+    // Note: Transfer-Encoding is already passed via HTTP_TRANSFER_ENCODING above
+    // The body has already been decoded from chunked format by the HTTP parser,
+    // so CONTENT_LENGTH reflects the actual decoded body size
 
     // Set working directory to script's directory
     let working_dir = script.parent().map(|p| p.to_path_buf());
@@ -120,14 +125,16 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
     register_fd_epoll(epoll_fd, stdout_fd);
     register_fd_epoll(epoll_fd, stderr_fd);
 
-    // Write request body to stdin (if any)
-    if !request.body.is_empty() {
-        if let Some(ref mut stdin) = stdin_handle {
-            let _ = stdin.write_all(&request.body);
+    // Set stdin to non-blocking and register with epoll if we have data to write
+    let mut body_written = 0usize;
+    let body_to_write = &request.body;
+    
+    if let Some(ref stdin) = stdin_handle {
+        set_fd_nonblocking(stdin.as_raw_fd());
+        if !body_to_write.is_empty() {
+            register_fd_epoll_write(epoll_fd, stdin.as_raw_fd());
         }
     }
-    // Drop stdin to send EOF to CGI
-    drop(stdin_handle);
 
     // Read output using epoll (NON-BLOCKING)
     let timeout = Duration::from_secs(5);
@@ -137,8 +144,9 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
     let mut stderr_buf: Vec<u8> = Vec::new();
     let mut stdout_done = false;
     let mut stderr_done = false;
+    let mut stdin_done = body_to_write.is_empty();
 
-    while !stdout_done || !stderr_done {
+    while !stdout_done || !stderr_done || !stdin_done {
         // Check timeout
         if start.elapsed() > timeout {
             let _ = child.kill();
@@ -149,13 +157,12 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
         }
 
         // Wait for events with short timeout (50ms)
-        let mut events: [libc::epoll_event; 4] = [libc::epoll_event { events: 0, u64: 0 }; 4];
+        let mut events: [libc::epoll_event; 8] = [libc::epoll_event { events: 0, u64: 0 }; 8];
         let nfds = unsafe {
-            libc::epoll_wait(epoll_fd, events.as_mut_ptr(), 4, 50)
+            libc::epoll_wait(epoll_fd, events.as_mut_ptr(), 8, 50)
         };
 
         if nfds < 0 {
-            // epoll error, but might be EINTR
             let err = std::io::Error::last_os_error();
             if err.raw_os_error() != Some(libc::EINTR) {
                 break;
@@ -167,6 +174,25 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
         for i in 0..nfds as usize {
             let ev = &events[i];
             let fd = ev.u64 as RawFd;
+
+            // Handle stdin writes (to CGI process)
+            if let Some(ref mut stdin) = stdin_handle {
+                if fd == stdin.as_raw_fd() && !stdin_done {
+                    if (ev.events & libc::EPOLLOUT as u32) != 0 {
+                        match stdin.write(&body_to_write[body_written..]) {
+                            Ok(0) => stdin_done = true,
+                            Ok(n) => {
+                                body_written += n;
+                                if body_written >= body_to_write.len() {
+                                    stdin_done = true;
+                                }
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                            Err(_) => stdin_done = true,
+                        }
+                    }
+                }
+            }
 
             if fd == stdout_fd && !stdout_done {
                 match read_nonblocking(&mut stdout_handle, &mut stdout_buf) {
@@ -187,18 +213,25 @@ pub fn run_cgi(script_path: &str, path_info: &str, request: &HttpRequest) -> Htt
             }
         }
 
-        // Also check if child has exited
+        // Close stdin when done writing to signal EOF to CGI
+        if stdin_done && stdin_handle.is_some() {
+            drop(stdin_handle.take());
+        }
+
+        // Check if child has exited
         match child.try_wait() {
             Ok(Some(_)) => {
-                // Child exited, drain remaining output
                 drain_remaining(&mut stdout_handle, &mut stdout_buf);
                 drain_remaining(&mut stderr_handle, &mut stderr_buf);
                 break;
             }
-            Ok(None) => {} // Still running
+            Ok(None) => {}
             Err(_) => break,
         }
     }
+
+    // Ensure stdin is closed
+    drop(stdin_handle);
 
     // Cleanup epoll
     unsafe { libc::close(epoll_fd) };
@@ -282,10 +315,21 @@ fn set_fd_nonblocking(fd: RawFd) {
     }
 }
 
-// Helper: Register fd with epoll
+// Helper: Register fd with epoll for READ
 fn register_fd_epoll(epoll_fd: RawFd, fd: RawFd) {
     let mut ev = libc::epoll_event {
         events: (libc::EPOLLIN | libc::EPOLLET) as u32,
+        u64: fd as u64,
+    };
+    unsafe {
+        libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut ev);
+    }
+}
+
+// Helper: Register fd with epoll for WRITE
+fn register_fd_epoll_write(epoll_fd: RawFd, fd: RawFd) {
+    let mut ev = libc::epoll_event {
+        events: (libc::EPOLLOUT | libc::EPOLLET) as u32,
         u64: fd as u64,
     };
     unsafe {

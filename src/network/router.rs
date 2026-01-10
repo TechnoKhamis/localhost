@@ -1,5 +1,104 @@
 use crate::config::{RouteConfig, ServerConfig, VHost};
 use crate::http::{HttpRequest, HttpResponse};
+use std::path::{Path, PathBuf, Component};
+
+/// Sanitize and validate a path to prevent directory traversal attacks
+fn sanitize_path(base: &str, user_path: &str) -> Option<PathBuf> {
+    let base_path = Path::new(base).canonicalize().unwrap_or_else(|_| PathBuf::from(base));
+    
+    // Decode URL encoding (handle %2F, %2E, etc.)
+    let decoded = url_decode(user_path);
+    
+    // Build path safely, rejecting any traversal attempts
+    let mut result = PathBuf::from(base);
+    
+    for component in Path::new(&decoded).components() {
+        match component {
+            Component::Normal(seg) => {
+                // Check for null bytes
+                let seg_str = seg.to_string_lossy();
+                if seg_str.contains('\0') {
+                    return None;
+                }
+                result.push(seg);
+            }
+            Component::CurDir => {} // "." is safe, just skip
+            Component::ParentDir => {
+                // ".." - REJECT! This is a traversal attempt
+                return None;
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                // Absolute path attempt - REJECT!
+                return None;
+            }
+        }
+    }
+    
+    // Verify the final path is still under base directory
+    if let Ok(canonical) = result.canonicalize() {
+        if canonical.starts_with(&base_path) {
+            return Some(result);
+        }
+    } else {
+        // File doesn't exist yet, but path is constructed safely
+        // Check that it would be under base if it existed
+        if result.starts_with(base) && !result.to_string_lossy().contains("..") {
+            return Some(result);
+        }
+    }
+    
+    None
+}
+
+/// URL decode a string (handles %XX encoding)
+fn url_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            // Try to read two hex digits
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            // Invalid encoding, keep as-is
+            result.push('%');
+            result.push_str(&hex);
+        } else if c == '+' {
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    
+    result
+}
+
+/// Check if a path contains dangerous patterns
+fn is_path_safe(path: &str) -> bool {
+    let decoded = url_decode(path);
+    
+    // Check for obvious traversal patterns
+    if decoded.contains("..") {
+        return false;
+    }
+    
+    // Check for null bytes
+    if decoded.contains('\0') {
+        return false;
+    }
+    
+    // Check for double slashes that might confuse path parsing
+    if decoded.contains("//") {
+        return false;
+    }
+    
+    true
+}
 
 pub fn find_route<'a>(
     request: &HttpRequest,
@@ -18,6 +117,11 @@ pub fn route_request(
     // Check HTTP version FIRST
     if request.version != "HTTP/1.1" {
         return error_response(400, &config.error_path, "Bad Request");
+    }
+
+    // SECURITY: Check for path traversal attempts EARLY
+    if !is_path_safe(&request.path) {
+        return error_response(403, &config.error_path, "Forbidden");
     }
 
     // Check body size limit EARLY (before any processing)
@@ -73,32 +177,22 @@ pub fn route_request(
                     .unwrap_or(&request.path)
                     .trim_start_matches('/');
                 
-                // DEBUG: Print what we're computing
-                eprintln!("[CGI DEBUG] request.path = '{}'", request.path);
-                eprintln!("[CGI DEBUG] route.path = '{}'", route.path);
-                eprintln!("[CGI DEBUG] route.root = '{}'", route.root);
-                eprintln!("[CGI DEBUG] after_route = '{}'", after_route);
-                
                 // Handle empty script name
                 if after_route.is_empty() {
                     return error_response(404, error_path, "Not Found");
                 }
                 
-                // Build script path
-                // If after_route already starts with route.root, don't duplicate it
-                let script_path = if after_route.starts_with(&route.root) {
-                    after_route.to_string()
-                } else {
-                    format!("{}/{}", route.root, after_route)
+                // SECURITY: Validate CGI script path
+                let script_path = match sanitize_path(&route.root, after_route) {
+                    Some(safe_path) => safe_path.to_string_lossy().to_string(),
+                    None => return error_response(403, error_path, "Forbidden"),
                 };
-                
-                eprintln!("[CGI DEBUG] script_path = '{}'", script_path);
                 
                 let path_info = request.path.clone();
                 return crate::handlers::run_cgi(&script_path, &path_info, request);
             }
             
-            // Build file path
+            // Build file path SAFELY
             let file_path = if route.path == "/" {
                 let req_path = request.path.trim_start_matches('/');
                 if req_path.is_empty() {
@@ -108,7 +202,11 @@ pub fn route_request(
                         route.root.clone()
                     }
                 } else {
-                    format!("{}/{}", route.root, req_path)
+                    // SECURITY: Sanitize the path
+                    match sanitize_path(&route.root, req_path) {
+                        Some(safe_path) => safe_path.to_string_lossy().to_string(),
+                        None => return error_response(403, error_path, "Forbidden"),
+                    }
                 }
             } else {
                 let after = request.path.strip_prefix(&route.path)
@@ -118,11 +216,15 @@ pub fn route_request(
                 if after.is_empty() {
                     route.root.clone()
                 } else {
-                    format!("{}/{}", route.root, after)
+                    // SECURITY: Sanitize the path
+                    match sanitize_path(&route.root, after) {
+                        Some(safe_path) => safe_path.to_string_lossy().to_string(),
+                        None => return error_response(403, error_path, "Forbidden"),
+                    }
                 }
             };
             
-            let path_obj = std::path::Path::new(&file_path);
+            let path_obj = Path::new(&file_path);
             
             // Serve file
             if path_obj.is_file() {

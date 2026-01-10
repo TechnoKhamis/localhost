@@ -80,7 +80,10 @@ pub fn parse_config_string(content: &str) -> io::Result<ServerConfig> {
                         for addr in value.split(',') {
                             let trimmed = addr.trim();
                             if !trimmed.is_empty() && trimmed.contains(':') {
-                                if !listen_addresses.contains(&trimmed.to_string()) {
+                                if listen_addresses.contains(&trimmed.to_string()) {
+                                    // Report duplicate port configuration error
+                                    eprintln!("[config] ERROR: duplicate listen address detected: {}", trimmed);
+                                } else {
                                     listen_addresses.push(trimmed.to_string());
                                 }
                             }
