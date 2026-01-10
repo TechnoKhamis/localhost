@@ -93,7 +93,19 @@ pub fn parse_config_string(content: &str) -> io::Result<ServerConfig> {
                 else if line.starts_with("client_body_size_limit") || line.starts_with("client_max_body_size") {
                     if let Some(value) = line.split('=').nth(1) {
                         if let Ok(size) = value.trim().parse::<usize>() {
-                            client_body_size_limit = size;
+                            // Minimum 1KB, Maximum 100MB
+                            const MIN_BODY_SIZE: usize = 1024;           // 1KB
+                            const MAX_BODY_SIZE: usize = 100 * 1024 * 1024; // 100MB
+                            
+                            if size < MIN_BODY_SIZE {
+                                eprintln!("[config] WARNING: client_body_size_limit too small ({}), using minimum: {}", size, MIN_BODY_SIZE);
+                                client_body_size_limit = MIN_BODY_SIZE;
+                            } else if size > MAX_BODY_SIZE {
+                                eprintln!("[config] WARNING: client_body_size_limit too large ({}), using maximum: {}", size, MAX_BODY_SIZE);
+                                client_body_size_limit = MAX_BODY_SIZE;
+                            } else {
+                                client_body_size_limit = size;
+                            }
                         }
                     }
                 }
